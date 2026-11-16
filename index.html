@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Tasty Planet HTML5</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: #1a1a2e;
+      color: #ffffff;
+      font-family: Arial, sans-serif;
+      user-select: none;
+    }
+    #ui {
+      position: absolute;
+      top: 15px;
+      left: 15px;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 12px 18px;
+      border-radius: 8px;
+      pointer-events: none;
+    }
+    h1 {
+      margin: 0 0 8px 0;
+      font-size: 20px;
+      color: #4ecca3;
+    }
+    p {
+      margin: 4px 0;
+      font-size: 14px;
+    }
+    canvas {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <h1>Tasty Goo</h1>
+    <p id="sizeText">Size: 10.0 µm (Microscopic)</p>
+    <p id="eatenText">Objects Eaten: 0</p>
+    <p>Move with <b>Mouse</b> or <b>WASD / Arrow Keys</b></p>
+  </div>
+  <canvas id="gameCanvas"></canvas>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const sizeText = document.getElementById('sizeText');
+    const eatenText = document.getElementById('eatenText');
+
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Scale tiers representing the progression of Tasty Planet
+    const TIERS = [
+      { minSize: 0, label: 'Microscopic', unit: 'µm', mult: 1, colors: ['#a8e6cf', '#dcedc1', '#ffd3b6'] },
+      { minSize: 35, label: 'Insects & Bugs', unit: 'mm', mult: 0.5, colors: ['#ffaaa5', '#ff8b94', '#84b6f4'] },
+      { minSize: 90, label: 'Small Animals', unit: 'cm', mult: 0.3, colors: ['#fdcae1', '#fdfd96', '#b0c2f2'] },
+      { minSize: 220, label: 'City Objects', unit: 'm', mult: 0.1, colors: ['#c5c6c7', '#66fcf1', '#45a29e'] },
+      { minSize: 550, label: 'Continents & Planets', unit: 'km', mult: 10, colors: ['#f39c12', '#e74c3c', '#9b59b6'] },
+      { minSize: 1400, label: 'Stars & Galaxies', unit: 'AU', mult: 0.05, colors: ['#f1c40f', '#e67e22', '#1abc9c'] }
+    ];
+
+    const player = {
+      x: 0,
+      y: 0,
+      radius: 12,
+      speed: 5,
+      eaten: 0,
+      wobble: 0
+    };
+
+    const keys = {};
+    let mouse = { x: canvas.width / 2, y: canvas.height / 2, active: false };
+
+    window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; mouse.active = false; });
+    window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+    window.addEventListener('mousemove', e => {
+      mouse.x = e.clientX;
+      mouse.y = e.clientY;
+      mouse.active = true;
+    });
+
+    let edibles = [];
+    const MAX_EDIBLES = 120;
+
+    function getCurrentTier() {
+      for (let i = TIERS.length - 1; i >= 0; i--) {
+        if (player.radius >= TIERS[i].minSize) return TIERS[i];
+      }
+      return TIERS[0];
+    }
+
+    function spawnEdible() {
+      const cameraScale = 12 / player.radius;
+      const viewWidth = canvas.width / cameraScale;
+      const viewHeight = canvas.height / cameraScale;
+
+      // Spawn objects relative to the player's current size (some smaller, some slightly larger)
+      const sizeRatio = 0.25 + Math.random() * 1.15;
+      const radius = player.radius * sizeRatio;
+
+      // Spawn just outside or near the edges of the visible screen
+      const angle = Math.random() * Math.PI * 2;
+      const dist = (Math.max(viewWidth, viewHeight) * 0.6) + Math.random() * (viewWidth * 0.5);
+
+      const tier = getCurrentTier();
+      const color = tier.colors[Math.floor(Math.random() * tier.colors.length)];
+
+      edibles.push({
+        x: player.x + Math.cos(angle) * dist,
+        y: player.y + Math.sin(angle) * dist,
+        radius: radius,
+        color: color,
+        vx: (Math.random() - 0.5) * (player.radius * 0.05),
+        vy: (Math.random() - 0.5) * (player.radius * 0.05),
+        shape: Math.random() > 0.5 ? 'circle' : 'polygon',
+        sides: Math.floor(Math.random() * 4) + 3
+      });
+    }
+
+    // Initialize starting world
+    for (let i = 0; i < MAX_EDIBLES; i++) {
+      spawnEdible();
+    }
+
+    function update() {
+      player.wobble += 0.15;
+
+      // Movement logic (scales smoothly with player size)
+      const moveSpeed = player.radius * 0.28;
+      let dx = 0;
+      let dy = 0;
+
+      if (keys['w'] || keys['arrowup']) dy -= 1;
+      if (keys['s'] || keys['arrowdown']) dy += 1;
+      if (keys['a'] || keys['arrowleft']) dx -= 1;
+      if (keys['d'] || keys['arrowright']) dx += 1;
+
+      if (dx !== 0 || dy !== 0) {
+        const len = Math.hypot(dx, dy);
+        player.x += (dx / len) * moveSpeed;
+        player.y += (dy / len) * moveSpeed;
+      } else if (mouse.active) {
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const mdx = mouse.x - centerX;
+        const mdy = mouse.y - centerY;
+        const dist = Math.hypot(mdx, mdy);
+        if (dist > 10) {
+          player.x += (mdx / dist) * moveSpeed;
+          player.y += (mdy / dist) * moveSpeed;
+        }
+      }
+
+      const cameraScale = 18 / player.radius;
+      const despawnDist = (Math.max(canvas.width, canvas.height) / cameraScale) * 1.5;
+
+      for (let i = edibles.length - 1; i >= 0; i--) {
+        const item = edibles[i];
+        item.x += item.vx;
+        item.y += item.vy;
+
+        const dist = Math.hypot(player.x - item.x, player.y - item.y);
+
+        // Despawn objects that are way too small or too far away
+        if (dist > despawnDist || item.radius < player.radius * 0.12) {
+          edibles.splice(i, 1);
+          continue;
+        }
+
+        // Check collision with player
+        if (dist < player.radius + item.radius * 0.6) {
+          if (item.radius < player.radius * 0.95) {
+            // Eat object and grow area proportionally
+            const areaGain = (item.radius * item.radius) * 0.18;
+            player.radius = Math.sqrt(player.radius * player.radius + areaGain);
+            player.eaten++;
+            edibles.splice(i, 1);
+          } else {
+            // Bounce off objects that are too big to eat
+            const angle = Math.atan2(player.y - item.y, player.x - item.x);
+            player.x += Math.cos(angle) * moveSpeed * 1.2;
+            player.y += Math.sin(angle) * moveSpeed * 1.2;
+          }
+        }
+      }
+
+      while (edibles.length < MAX_EDIBLES) {
+        spawnEdible();
+      }
+
+      // Update UI
+      const tier = getCurrentTier();
+      const displaySize = (player.radius * tier.mult).toFixed(1);
+      sizeText.textContent = `Size: ${displaySize} ${tier.unit} (${tier.label})`;
+      eatenText.textContent = `Objects Eaten: ${player.eaten}`;
+    }
+
+    function drawGrid(cameraScale) {
+      // Dynamic grid spacing that adjusts as you grow so you always sense speed
+      const baseGrid = 100;
+      const magnitude = Math.pow(2, Math.floor(Math.log2(player.radius / 12)));
+      const gridSize = baseGrid * magnitude;
+
+      const left = player.x - (canvas.width / 2) / cameraScale;
+      const right = player.x + (canvas.width / 2) / cameraScale;
+      const top = player.y - (canvas.height / 2) / cameraScale;
+      const bottom = player.y + (canvas.height / 2) / cameraScale;
+
+      const startX = Math.floor(left / gridSize) * gridSize;
+      const startY = Math.floor(top / gridSize) * gridSize;
+
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+      ctx.lineWidth = 1 / cameraScale;
+      ctx.beginPath();
+
+      for (let x = startX; x < right; x += gridSize) {
+        ctx.moveTo(x, top);
+        ctx.lineTo(x, bottom);
+      }
+      for (let y = startY; y < bottom; y += gridSize) {
+        ctx.moveTo(left, y);
+        ctx.lineTo(right, y);
+      }
+      ctx.stroke();
+    }
+
+    function draw() {
+      ctx.fillStyle = '#1a1a2e';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.save();
+
+      // Zoom camera out smoothly as the player grows
+      const cameraScale = 18 / player.radius;
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.scale(cameraScale, cameraScale);
+      ctx.translate(-player.x, -player.y);
+
+      drawGrid(cameraScale);
+
+      // Draw edibles
+      for (const item of edibles) {
+        ctx.fillStyle = item.color;
+        ctx.beginPath();
+        if (item.shape === 'circle') {
+          ctx.arc(item.x, item.y, item.radius, 0, Math.PI * 2);
+        } else {
+          for (let i = 0; i < item.sides; i++) {
+            const a = (i / item.sides) * Math.PI * 2;
+            const px = item.x + Math.cos(a) * item.radius;
+            const py = item.y + Math.sin(a) * item.radius;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          }
+          ctx.closePath();
+        }
+        ctx.fill();
+
+        // Outline dangerous (too big) objects in red
+        if (item.radius >= player.radius * 0.95) {
+          ctx.strokeStyle = '#ff4757';
+          ctx.lineWidth = 2 / cameraScale;
+          ctx.stroke();
+        }
+      }
+
+      // Draw Grey Goo player with a slight jelly wobble
+      ctx.fillStyle = '#4ecca3';
+      ctx.beginPath();
+      const points = 24;
+      for (let i = 0; i <= points; i++) {
+        const angle = (i / points) * Math.PI * 2;
+        const offset = Math.sin(angle * 4 + player.wobble) * (player.radius * 0.04);
+        const r = player.radius + offset;
+        const px = player.x + Math.cos(angle) * r;
+        const py = player.y + Math.sin(angle) * r;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2 / cameraScale;
+      ctx.stroke();
+
+      // Cute goo eyes
+      const eyeOffset = player.radius * 0.3;
+      const eyeRadius = player.radius * 0.14;
+      ctx.fillStyle = '#1a1a2e';
+      ctx.beginPath();
+      ctx.arc(player.x - eyeOffset, player.y - eyeOffset * 0.5, eyeRadius, 0, Math.PI * 2);
